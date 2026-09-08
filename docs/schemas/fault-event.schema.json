@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabtwin/docs/schemas/fault-event.schema.json",
+  "title": "FabTwin fault event",
+  "description": "One entry in the hidden ground-truth fault schedule. Never exposed to analysis code — see docs/data-dictionary.md sections 5-7.",
+  "type": "object",
+  "required": ["event_id", "fault_type", "onset", "affected_scope", "magnitude"],
+  "properties": {
+    "event_id": { "type": "string" },
+    "fault_type": {
+      "type": "string",
+      "enum": [
+        "step_mean_shift",
+        "linear_drift",
+        "variance_inflation",
+        "sensor_bias",
+        "monotonic_equipment_degradation"
+      ]
+    },
+    "onset": { "type": "string", "format": "date-time" },
+    "duration_s": {
+      "type": ["number", "null"],
+      "description": "null means ongoing until recovery_action (typical for monotonic_equipment_degradation)"
+    },
+    "affected_scope": {
+      "type": "object",
+      "required": ["tool_id", "metric"],
+      "properties": {
+        "tool_id": { "type": "string" },
+        "chamber_id": {
+          "type": ["string", "null"],
+          "description": "null = whole tool"
+        },
+        "metric": {
+          "type": "string",
+          "enum": ["etch_depth", "etch_rate", "cd_bias", "wiwnu", "defect_count"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "magnitude": {
+      "type": "number",
+      "description": "Interpretation depends on fault_type - see docs/data-dictionary.md section 6 table"
+    },
+    "recovery_action": {
+      "type": ["object", "null"],
+      "required": ["timestamp", "action_type"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action_type": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

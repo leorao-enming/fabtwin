@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabtwin/evidence/case-manifest.schema.json",
+  "title": "FabTwin case-run manifest",
+  "description": "Machine-readable result-traceability record for one case-study run, per Overview section 3.3. Written by `make cases` into cases/<case-name>/manifest.json — never hand-edited. Locked at P0 ahead of Gate T4 (when cases first land) so the evidence pipeline is proven with a hand-written fixture before any real case exists — see tests/unit/test_case_manifest_schema.py.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "case_name",
+    "timestamp_utc",
+    "git_sha",
+    "app_version",
+    "dependency_lock_hash",
+    "config_hash",
+    "random_seed",
+    "wall_time_s",
+    "warnings",
+    "kpis"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "case_name": {
+      "type": "string",
+      "enum": [
+        "chamber-drift",
+        "tool-chamber-comparison",
+        "degradation-maintenance-recovery",
+        "secom-methodology-audit",
+        "lam9600-cross-validation"
+      ]
+    },
+    "timestamp_utc": { "type": "string", "format": "date-time" },
+    "git_sha": { "type": "string" },
+    "app_version": { "type": "string" },
+    "dependency_lock_hash": { "type": "string" },
+    "config_hash": {
+      "type": "string",
+      "description": "hash of the frozen configs/cases/<case-name>.* input this run was generated from"
+    },
+    "random_seed": {
+      "type": ["integer", "null"],
+      "description": "canonical single-seed demo run: the seed. multi-seed summary run: null, with seeds_summary populated instead."
+    },
+    "seeds_summary": {
+      "type": "object",
+      "description": "required once a case reports resume/report-citable numbers (Overview section 4.4: >=30 seeds)",
+      "properties": {
+        "n_seeds": { "type": "integer", "minimum": 30 },
+        "seed_list_hash": { "type": "string" }
+      }
+    },
+    "wall_time_s": { "type": "number" },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "kpis": {
+      "type": "object",
+      "description": "case-specific key results (e.g. detection_delay_median, false_alarm_count, cpk, wafer_yield) - shape varies by case_name and is not fixed at schema level"
+    }
+  },
+  "additionalProperties": false
+}

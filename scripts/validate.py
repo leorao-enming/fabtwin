@@ -11,7 +11,7 @@ anywhere until they are.
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -27,17 +27,15 @@ OUTPUT_PATH = ROOT / "evidence" / "validation-summary.json"
 
 def git_sha() -> str:
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-        ).strip()
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     except Exception:
         return "unknown"
 
 
 def build_summary() -> dict:
     return {
-        "run_id": f"p0-fixture-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "run_id": f"p0-fixture-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}",
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "git_sha": git_sha(),
         "app_version": "0.0.0",
         "checks": [
@@ -45,12 +43,17 @@ def build_summary() -> dict:
                 "name": "evidence_pipeline_smoke",
                 "mandatory": True,
                 "passed": True,
-                "detail": "P0 placeholder check — schema + CI wiring only, no engineering result yet.",
+                "detail": (
+                    "P0 placeholder check — schema + CI wiring only, no engineering result yet."
+                ),
             }
         ],
         "warnings": [
             "P0 skeleton: no simulator, SPC, or fault-detection checks exist yet.",
-            "random_seed has NOT been recorded — no simulator/case runs exist yet; see Overview §3.3.",
+            (
+                "random_seed has NOT been recorded — no simulator/case runs exist yet; "
+                "see Overview §3.3."
+            ),
         ],
     }
 
@@ -63,9 +66,7 @@ def main() -> int:
     OUTPUT_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"wrote {OUTPUT_PATH}")
 
-    mandatory_failures = [
-        c for c in summary["checks"] if c["mandatory"] and not c["passed"]
-    ]
+    mandatory_failures = [c for c in summary["checks"] if c["mandatory"] and not c["passed"]]
     if mandatory_failures:
         print(f"FAILED mandatory checks: {mandatory_failures}", file=sys.stderr)
         return 1

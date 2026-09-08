@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabtwin/docs/schemas/observation.schema.json",
+  "title": "FabTwin observation record",
+  "description": "One row of the long-format observation table — the only table analysis code (SPC, capability, dashboards) reads. See docs/data-dictionary.md sections 3-4. Hidden ground truth (random-effect decomposition, fault labels) is never merged into this table.",
+  "type": "object",
+  "required": [
+    "timestamp",
+    "tool_id",
+    "chamber_id",
+    "lot_id",
+    "wafer_id",
+    "site_id",
+    "recipe_id",
+    "metric",
+    "value",
+    "unit"
+  ],
+  "properties": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "tool_id": { "type": "string" },
+    "chamber_id": { "type": "string" },
+    "lot_id": { "type": "string" },
+    "wafer_id": { "type": "string" },
+    "site_id": {
+      "type": ["string", "null"],
+      "description": "null for wafer-level metrics (wiwnu, defect_count)"
+    },
+    "recipe_id": { "type": "string" },
+    "metric": {
+      "type": "string",
+      "enum": ["etch_depth", "etch_rate", "cd_bias", "wiwnu", "defect_count"]
+    },
+    "value": { "type": "number" },
+    "unit": {
+      "type": "string",
+      "enum": ["nm", "nm/min", "%", "count"]
+    }
+  },
+  "additionalProperties": false
+}
