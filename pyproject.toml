@@ -1,0 +1,47 @@
+[project]
+name = "fabtwin"
+version = "0.0.0"
+description = "Hierarchical synthetic plasma-etch simulator with SPC, capability, fault-diagnostics, and external-validation analytics."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+authors = [{ name = "Leo", email = "leorao2004@gmail.com" }]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    "streamlit>=1.37",
+    "pydantic>=2.7",
+    "matplotlib>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "jsonschema>=4.22",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
