@@ -63,7 +63,37 @@ only at real release Gates (T5 = v1.0.0), not for intermediate work.
 
 ### Not yet done (T1 remaining)
 
-- SPC/capability layer (Gate T2), fault-ground-truth-vs-detection scoring
-  (Gate T3), the three frozen case configs and Streamlit dashboard (Gate
-  T4) are all still not started. This simulator has not yet been run
-  end-to-end through `make cases` or connected to `app/main.py`.
+- Fault-ground-truth-vs-detection scoring (Gate T3), the three frozen case
+  configs and Streamlit dashboard (Gate T4) are all still not started. This
+  simulator has not yet been run end-to-end through `make cases` or
+  connected to `app/main.py`.
+
+## [T2 in progress] — 2026-09-12
+
+### Added
+
+- `src/fabtwin/spc/phase.py`: the Phase I/II split as an immutable
+  `FrozenLimits` dataclass — a chart's Phase II "apply" function can never
+  re-estimate limits from the data it is scoring, structurally preventing
+  the "recompute limits on fault-contaminated data" mistake the Overview
+  explicitly forbids.
+- `src/fabtwin/spc/imr.py`: Individuals (X) and Moving Range chart.
+- `src/fabtwin/spc/ewma.py`: EWMA chart, with the NIST EWMA_0..EWMA_n
+  indexing convention implemented exactly (not guessed).
+- `src/fabtwin/spc/capability.py`: Cp/Cpk (within/common-cause sigma) and
+  Pp/Ppk (overall sigma) sharing one formula core but kept as distinct
+  sigma sources, plus a small-sample-size warning.
+- Every formula checked against a real NIST Engineering Statistics Handbook
+  worked example (sections 6.3.2.2, 6.3.2.4, 6.1.6), not just internal
+  self-consistency — including reproducing NIST's own stated conclusions
+  ("process is in control", "Cpk<1.0, not a good process"). See the EWMA
+  test file's docstring for a provenance note: an earlier page fetch gave
+  an ambiguous EWMA series, and the fixture used here was re-verified by
+  re-fetching the raw table and hand-recomputing the recursion before being
+  hardcoded.
+- 24 new tests (66/66 repo-wide), ruff/mypy clean, GitHub Actions green.
+
+### Not yet done (T2 remaining)
+
+- Xbar-R/Xbar-S subgroup charts, CUSUM, and the Western Electric/Nelson
+  rule engine are not built yet — do not treat Gate T2 as complete.
