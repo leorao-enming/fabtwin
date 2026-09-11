@@ -97,3 +97,29 @@ only at real release Gates (T5 = v1.0.0), not for intermediate work.
 
 - Xbar-R/Xbar-S subgroup charts, CUSUM, and the Western Electric/Nelson
   rule engine are not built yet — do not treat Gate T2 as complete.
+
+## [T1<->T2 integration] — 2026-09-12
+
+### Added
+
+- `src/fabtwin/analysis.py`: the first place the T1 simulator's observation
+  table and the T2 `spc/` package actually meet. `extract_lot_series()`
+  turns the long-format observation table into a per-lot time series;
+  `split_phase_i_ii()` is the prefix/suffix Phase I/II window;
+  `run_imr`/`run_ewma`/`run_capability` chain a Phase I fit + Phase II
+  scoring, always from the Phase I window only.
+- Integration tests call `simulate()` for real (not hand-built lists): a
+  case-1-shaped chamber-drift scenario where both I-MR and EWMA flag the
+  drifting chamber and do not false-alarm on its untouched sibling, and a
+  case-2-shaped scenario (steady `variance_inflation` fault, no mean shift)
+  where Cpk correctly separates two chambers with near-identical means —
+  reproducing the Overview's own "平均值正常 ≠ 过程健康" framing end to end.
+- 74/74 tests pass repo-wide (8 new), ruff/mypy clean.
+
+### Explicitly not T3
+
+`SPCRunResult.first_alarm_index` is scaffolding, not the Overview section
+4.3 detection-scoring API (`event_detected`/`detection_delay`/
+`pre_fault_false_alarms`/`missed_event`), which needs the simulator's
+hidden-truth fault ground truth compared against detection output — that
+comparison is still Gate T3.
