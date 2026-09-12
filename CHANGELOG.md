@@ -123,3 +123,32 @@ only at real release Gates (T5 = v1.0.0), not for intermediate work.
 `pre_fault_false_alarms`/`missed_event`), which needs the simulator's
 hidden-truth fault ground truth compared against detection output — that
 comparison is still Gate T3.
+
+## [T2 complete] — 2026-09-12
+
+### Added
+
+- `src/fabtwin/spc/cusum.py`: two-sided CUSUM (S_hi/S_lo). Checked against
+  NIST's own 20-point worked example (section 6.3.2.3) — the page was
+  re-fetched requesting the full (i, x_i, S_hi, S_lo) table rather than
+  trusting a first, possibly-summarized extraction, several points
+  hand-recomputed, then all 20 rows pinned as a fixture. Reproduces NIST's
+  own conclusion (in control through group 13, signaling from group 14).
+- `src/fabtwin/spc/xbar_r.py`: Xbar-R subgroup chart using NIST's real
+  published A2/D3/D4 constants table (section 6.3.2.1). **Provenance
+  callout**: NIST's handbook does not publish a full numeric worked example
+  for this chart (checked both the formula page and the overview page,
+  2026-09-12) — the known-answer test uses a small hand-computed,
+  hand-verified fixture built from the real constants instead, and says so
+  explicitly rather than implying it's a NIST worked example the way
+  I-MR/EWMA/CUSUM/capability are.
+- `src/fabtwin/spc/rules.py`: the four Western Electric zone rules (1
+  point beyond 3σ; 2-of-3 beyond 2σ same side; 4-of-5 beyond 1σ same side;
+  8 consecutive same side), each violation carrying `rule_id`,
+  `trigger_index`, and `contributing_window`.
+- 101/101 tests pass repo-wide (27 new), ruff/mypy clean.
+
+This closes Gate T2's "6 类控制图/规则" set (I-MR, EWMA, Xbar-R, CUSUM,
+capability, Western Electric/Nelson rules). Not yet done: no case study has
+been run through this layer (Gate T4), and PCA/Hotelling T²/SPE
+multivariate monitoring is out of scope here (section 4.5, T3/T4).
