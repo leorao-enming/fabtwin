@@ -152,3 +152,28 @@ This closes Gate T2's "6 类控制图/规则" set (I-MR, EWMA, Xbar-R, CUSUM,
 capability, Western Electric/Nelson rules). Not yet done: no case study has
 been run through this layer (Gate T4), and PCA/Hotelling T²/SPE
 multivariate monitoring is out of scope here (section 4.5, T3/T4).
+
+## [T3 partial] — 2026-09-12
+
+### Added
+
+- `src/fabtwin/detection.py`: the formal detection-scoring API — the first
+  place fault ground truth is allowed to meet SPC detection output, and
+  only for after-the-fact scoring, never to influence how a chart's limits
+  or points are computed. `score_detection(result, fault)` compares an
+  `analysis.py` `SPCRunResult` against a simulator `FaultEvent` and returns
+  `event_detected`, `first_alarm_timestamp`, `detection_delay`,
+  `pre_fault_false_alarms`, `missed_event`.
+- 11 new tests: 8 unit tests on hand-built `SPCRunResult` fixtures
+  (no-alarm/missed-event, pre-onset alarm counted as a false alarm not a
+  detection, exact-onset edge case, multiple false alarms before a true
+  detection, first-vs-later alarm selection), plus 3 integration tests —
+  the first time simulator → SPC → detection run together end to end on a
+  real chamber-drift scenario.
+- 112/112 tests pass repo-wide, ruff/mypy clean.
+
+### Not yet done (T3 remaining)
+
+Yield (measurement/wafer/lot three-level pass definitions) and DPPM
+(opportunity count + defect definition, config-driven) — data-dictionary.md
+section 8. Do not treat Gate T3 as complete.
