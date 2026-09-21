@@ -2,7 +2,7 @@
 
 Hierarchical synthetic plasma-etch process simulator with SPC / process-capability / fault-diagnostics analytics, built to demonstrate semiconductor manufacturing analytics competency.
 
-**Status: P0 skeleton.** No simulator, SPC methods, or dashboard exist yet. Nothing in this repo should be treated as a working result until a `v1.0.0` tag exists.
+**Status: Gates T1-T2 complete, T3 in progress.** The simulator, all six SPC/capability chart types, and the core fault-detection-scoring API exist and are tested (see the status table below). No dashboard, case studies, or external validation (SECOM/LAM9600) exist yet. Nothing in this repo should be treated as a working result until a `v1.0.0` tag exists — in particular, no case study has been run yet, so no number here supports a resume claim.
 
 ## What this project demonstrates
 
@@ -46,12 +46,14 @@ make report    # build the technical report from evidence + cases only
 
 | Gate | Deliverable | Status |
 |---|---|---|
-| P0 | Repo skeleton, ADR template, CI empty-run | ✅ this commit |
-| T1 | Simulator + data dictionary | ⬜ not started |
-| T2 | SPC + capability | ⬜ not started |
-| T3 | Faults + yield | ⬜ not started |
+| P0 | Repo skeleton, ADR template, CI empty-run | ✅ `73323d1` |
+| T1 | Simulator + data dictionary + variance-decomposition validation | ✅ `a710bcf` |
+| T2 | SPC + capability (I-MR, EWMA, Xbar-R, CUSUM, Cp/Cpk/Pp/Ppk, Western Electric/Nelson rules) | ✅ `18d977b` |
+| T3 | Fault detection scoring (event_detected/detection_delay/false alarms) | 🟡 in progress — yield/DPPM not yet built |
 | T4 | Demo + 3 cases + external validation (SECOM/LAM9600) | ⬜ not started |
 | T5 | v1.0.0 release | ⬜ not started |
+
+"✅" means the gate's own listed deliverable is implemented and tested (see `CHANGELOG.md` for exactly what shipped in which commit) — it does **not** mean a case study has been run through it yet. Every chart/capability formula (T2) is checked against a real NIST Engineering Statistics Handbook worked example, not just internal self-consistency; the one exception (Xbar-R, where NIST doesn't publish a full numeric example) is checked against a hand-verified fixture built from NIST's own published control-chart constants, and says so explicitly in its test file rather than implying otherwise.
 
 ## Non-goals (v1)
 

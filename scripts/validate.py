@@ -1,11 +1,16 @@
 """Run engineering validation and write evidence/validation-summary.json.
 
-P0 stub: no real checks exist yet (simulator/SPC land in T1-T3). This script
-writes a schema-conformant fixture so the evidence pipeline itself — schema,
-CI wiring, non-zero exit on mandatory-check failure — is proven end to end
-before there is anything real to validate. Every check below must be replaced
-with a genuine test as each Gate lands; none of these numbers may be quoted
-anywhere until they are.
+Runs `pytest tests/validation` — the known-answer/fixture/variance-
+decomposition suite (NIST worked examples for I-MR/EWMA/CUSUM/capability,
+a hand-verified fixture for Xbar-R, and the T1 variance-decomposition
+checks) — as the one mandatory check. tests/unit is intentionally NOT part
+of this check: `make test` already gates every PR on tests/unit, and this
+script's job is specifically the engineering-validation layer Overview
+section 3.2 describes, not a second copy of the fast test suite.
+
+Still not covered by this check (until Gate T4 lands): no case study has
+been run yet, so no run_id/config_hash/random_seed here refers to a real
+case — this script validates the underlying methods, not a case result.
 """
 
 import json
@@ -32,27 +37,43 @@ def git_sha() -> str:
         return "unknown"
 
 
+def run_validation_suite() -> tuple[bool, str]:
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/validation", "-q"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    summary_line = next(
+        (
+            line
+            for line in reversed(result.stdout.splitlines())
+            if "passed" in line or "failed" in line
+        ),
+        result.stdout.strip()[-200:],
+    )
+    return result.returncode == 0, summary_line
+
+
 def build_summary() -> dict:
+    passed, detail = run_validation_suite()
     return {
-        "run_id": f"p0-fixture-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}",
+        "run_id": f"validate-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}",
         "timestamp_utc": datetime.now(UTC).isoformat(),
         "git_sha": git_sha(),
         "app_version": "0.0.0",
         "checks": [
             {
-                "name": "evidence_pipeline_smoke",
+                "name": "tests_validation_suite",
                 "mandatory": True,
-                "passed": True,
-                "detail": (
-                    "P0 placeholder check — schema + CI wiring only, no engineering result yet."
-                ),
+                "passed": passed,
+                "detail": f"pytest tests/validation: {detail}",
             }
         ],
         "warnings": [
-            "P0 skeleton: no simulator, SPC, or fault-detection checks exist yet.",
             (
-                "random_seed has NOT been recorded — no simulator/case runs exist yet; "
-                "see Overview §3.3."
+                "random_seed has NOT been recorded — no case run exists yet "
+                "(Gate T4); see Overview §3.3."
             ),
         ],
     }
