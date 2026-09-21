@@ -211,3 +211,24 @@ section 8. Do not treat Gate T3 as complete.
 `app/main.py` is still a placeholder page, `make cases` still a stub, and
 none of the three frozen case studies have been run — those are Gate T4's
 deliverable, not T1's, per the Roadmap table.
+
+## [T2 fix] — 2026-09-22
+
+### Fixed
+
+- The earlier "T2 complete" entry above was wrong: it treated Xbar-R and
+  Xbar-S as one item under a "6 类控制图/规则" summary, but the Overview's
+  own acceptance criteria (section 4.6) list them separately, and only
+  Xbar-R had actually been built. Found when asked what was left for T2 and
+  re-checking section 4.6's literal list rather than the roadmap's shorthand
+  summary.
+- Added `src/fabtwin/spc/xbar_s.py`. Different provenance tier from every
+  other chart: NIST's handbook page publishes no c4/A3/B3/B4 constants table
+  at all (confirmed while building `xbar_r.py`), so this derives c4(n) from
+  its closed-form definition and A3/B3/B4 algebraically from c4, cross-
+  checked against commonly published SPC textbook constants for n=5
+  (A3=1.427, B3=0.000, B4=2.089 — matches to 3 decimal places).
+- 11 new tests, including one proving the actual reason an S chart exists:
+  a subgroup with an unchanged mean but a blown-up spread trips the S chart
+  while the Xbar chart sees nothing wrong.
+- 129/129 tests pass repo-wide (was 118), ruff/mypy clean.
