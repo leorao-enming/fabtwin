@@ -48,12 +48,12 @@ make report    # build the technical report from evidence + cases only
 |---|---|---|
 | P0 | Repo skeleton, ADR template, CI empty-run | ✅ `73323d1` |
 | T1 | Simulator + data dictionary + variance-decomposition validation | ✅ `a710bcf` |
-| T2 | SPC + capability (I-MR, EWMA, Xbar-R, CUSUM, Cp/Cpk/Pp/Ppk, Western Electric/Nelson rules) | ✅ `18d977b` |
+| T2 | SPC + capability (I-MR, EWMA, Xbar-R, Xbar-S, CUSUM, Cp/Cpk/Pp/Ppk, Western Electric/Nelson rules) | ✅ `bd7efb6` |
 | T3 | Fault detection scoring (event_detected/detection_delay/false alarms) | 🟡 in progress — yield/DPPM not yet built |
 | T4 | Demo + 3 cases + external validation (SECOM/LAM9600) | ⬜ not started |
 | T5 | v1.0.0 release | ⬜ not started |
 
-"✅" means the gate's own listed deliverable is implemented and tested (see `CHANGELOG.md` for exactly what shipped in which commit) — it does **not** mean a case study has been run through it yet. Every chart/capability formula (T2) is checked against a real NIST Engineering Statistics Handbook worked example, not just internal self-consistency; the one exception (Xbar-R, where NIST doesn't publish a full numeric example) is checked against a hand-verified fixture built from NIST's own published control-chart constants, and says so explicitly in its test file rather than implying otherwise.
+"✅" means the gate's own listed deliverable is implemented and tested (see `CHANGELOG.md` for exactly what shipped in which commit) — it does **not** mean a case study has been run through it yet. T2 was marked ✅ once prematurely (commit `18d977b`, missing Xbar-S — see `CHANGELOG.md`'s "[T2 fix]" entry) before the gap was found and closed; the SHA above is the corrected one. Every chart/capability formula is checked against a real NIST Engineering Statistics Handbook worked example, not just internal self-consistency, with two exceptions that say so explicitly in their own test files rather than implying otherwise: Xbar-R (NIST publishes the A2/D3/D4 constants but no full numeric example — checked against a hand-verified fixture) and Xbar-S (NIST publishes no constants table at all for this chart — the c4/A3/B3/B4 constants are derived from their closed-form mathematical definition and cross-checked against commonly published textbook values).
 
 ## Non-goals (v1)
 
