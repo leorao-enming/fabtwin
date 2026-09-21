@@ -177,3 +177,37 @@ multivariate monitoring is out of scope here (section 4.5, T3/T4).
 Yield (measurement/wafer/lot three-level pass definitions) and DPPM
 (opportunity count + defect definition, config-driven) — data-dictionary.md
 section 8. Do not treat Gate T3 as complete.
+
+## [T1 complete] — 2026-09-21/22
+
+### Added
+
+- `tests/validation/test_variance_decomposition.py`: the third and last of
+  Gate T1's own deliverables (Overview section 2: "可复现的 hierarchical
+  simulator、数据字典、分布/方差分解验证"). Isolates each random-effect
+  layer (lot, wafer, site-noise, tool/chamber offset) through the real
+  `simulate()` pipeline and checks empirical variance matches the
+  configured sigma; checks combined variance decomposes additively across
+  layers; checks variance direction tracks a doubled sigma monotonically.
+  6 new tests, 118/118 repo-wide, ruff/mypy clean. **Gate T1's own scope is
+  now complete** — simulator, data dictionary, and this validation.
+
+### Fixed
+
+- `README.md` had been stuck at the P0 description ("no simulator/SPC/
+  dashboard exist yet", every gate "not started") since before the T1
+  commit landed — a real drift bug, not just a missing update, since it's
+  the first thing anyone reads. Updated the status line and roadmap table
+  to the real per-commit state (T1/T2 ✅, T3 🟡), with an explicit note that
+  "✅" means formula-level complete, not "a case study has been run."
+- `scripts/validate.py`'s one mandatory check was still the original P0
+  placeholder despite `tests/validation` now having 25 real tests. Changed
+  it to actually run `pytest tests/validation` and report the genuine
+  pass/fail as the check detail — `make validate` now gates on something
+  real instead of an unconditional `passed: True`.
+
+### Not yet done (T1 is complete; T2/T3/T4 remaining work is unaffected)
+
+`app/main.py` is still a placeholder page, `make cases` still a stub, and
+none of the three frozen case studies have been run — those are Gate T4's
+deliverable, not T1's, per the Roadmap table.
