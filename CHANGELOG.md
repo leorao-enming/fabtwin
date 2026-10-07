@@ -258,3 +258,31 @@ deliverable, not T1's, per the Roadmap table.
 - PCA/Hotelling T²/SPE multivariate monitoring (Overview 4.2) is still not
   built; it is the Overview risk-table checkpoint for the end of T3.
 - Nothing here has been run through a frozen case study; that is Gate T4.
+
+## [T3 PCA/T2/SPE] - 2026-10-07
+
+### Added
+
+- `src/fabtwin/spc/pca_monitor.py`: PCA monitoring with Hotelling T^2 and SPE,
+  Phase I fit / frozen Phase II scoring. Components chosen by a cumulative-variance
+  threshold (or fixed `n_components`), always leaving a residual subspace. T^2 limit
+  uses the future-observation F form; SPE limit uses Box's weighted chi-square
+  approximation. alpha, k, retained variance and both limits are recorded in
+  `model.params`.
+- `analysis.run_pca_monitor`: per-lot means of several metrics -> same
+  `SPCRunResult` as the univariate charts, so `score_detection` scores it too.
+- 11 tests: eigenvalues vs an independent correlation-matrix decomposition; T^2 limit
+  vs the published F_0.01(2,18)=6.013; SPE limit reduces to lambda*chi2_0.99(3)=11.345
+  when residual eigenvalues are equal; healthy false-alarm rate ~ alpha; a
+  correlation-breaking fault caught by SPE while I-MR on each variable stays at
+  nominal false-alarm level; a mean shift along the dominant direction caught by T^2;
+  an end-to-end simulate -> PCA -> detection run. 158/158 pass, ruff/mypy clean.
+- One test expectation was initially miscalibrated (a ~2.4 sd shift is not reliably
+  caught at alpha=0.01); the shift was corrected, the limit was not touched.
+
+### Not done
+
+- Nothing has been run on a frozen case study or on LAM9600 yet (Gate T4 / Overview 4.5).
+  PCA on the simulator's lot means is a plumbing check, not evidence about real
+  multi-sensor data.
+

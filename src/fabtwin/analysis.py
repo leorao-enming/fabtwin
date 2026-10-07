@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from fabtwin.config import Metric
@@ -30,6 +31,8 @@ from fabtwin.spc.ewma import apply_phase_ii as ewma_apply_phase_ii
 from fabtwin.spc.ewma import fit_phase_i as ewma_fit_phase_i
 from fabtwin.spc.imr import apply_phase_ii as imr_apply_phase_ii
 from fabtwin.spc.imr import fit_phase_i as imr_fit_phase_i
+from fabtwin.spc.pca_monitor import apply_phase_ii as pca_apply_phase_ii
+from fabtwin.spc.pca_monitor import fit_phase_i as pca_fit_phase_i
 from fabtwin.spc.phase import ChartPoint, FrozenLimits
 
 
@@ -171,6 +174,55 @@ def run_cusum(
         for p in cusum_apply_phase_ii(phase_ii["value"].tolist(), limits)
     ]
     return SPCRunResult("CUSUM", limits, phase_i, phase_ii, points)
+
+
+def run_pca_monitor(
+    observations: pd.DataFrame,
+    tool_id: str,
+    chamber_id: str,
+    metrics: list[Metric],
+    phase_i_n_lots: int,
+    alpha: float = 0.01,
+    variance_threshold: float = 0.9,
+    n_components: int | None = None,
+) -> SPCRunResult:
+    """Multivariate PCA / Hotelling T^2 / SPE over per-lot means of `metrics`.
+
+    Each ChartPoint.value is max(T^2/T^2_limit, SPE/SPE_limit), so the frozen
+    limit is 1.0 and a point alarms when either statistic exceeds its own
+    limit. Do not include perfectly collinear metrics (etch_rate is a
+    deterministic function of etch_depth): a degenerate Phase I covariance
+    leaves no meaningful residual subspace.
+    """
+    if len(metrics) < 2:
+        raise ValueError("PCA monitoring needs at least 2 metrics")
+    series = [extract_lot_series(observations, tool_id, chamber_id, m) for m in metrics]
+    base = series[0]
+    for other in series[1:]:
+        if not base["lot_id"].equals(other["lot_id"]):
+            raise ValueError("metrics are not observed on the same lots")
+    matrix = np.column_stack([s_["value"].to_numpy() for s_ in series])
+    phase_i, phase_ii = split_phase_i_ii(base, phase_i_n_lots)
+    model = pca_fit_phase_i(
+        matrix[:phase_i_n_lots],
+        alpha=alpha,
+        variance_threshold=variance_threshold,
+        n_components=n_components,
+    )
+    scores = pca_apply_phase_ii(matrix[phase_i_n_lots:], model)
+    ratio = np.maximum(scores.t2 / model.t2_limit, scores.spe / model.spe_limit)
+    points = [
+        ChartPoint(index=i, value=float(r), out_of_control=bool(a))
+        for i, (r, a) in enumerate(zip(ratio, scores.alarm, strict=True))
+    ]
+    limits = FrozenLimits(
+        center_line=0.0,
+        ucl=1.0,
+        lcl=0.0,
+        method="PCA-T2-SPE",
+        params={**model.params, "metrics": list(metrics)},
+    )
+    return SPCRunResult("PCA-T2-SPE", limits, phase_i, phase_ii, points)
 
 
 def run_capability(
