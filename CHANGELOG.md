@@ -232,3 +232,29 @@ deliverable, not T1's, per the Roadmap table.
   a subgroup with an unchanged mean but a blown-up spread trips the S chart
   while the Xbar chart sees nothing wrong.
 - 129/129 tests pass repo-wide (was 118), ruff/mypy clean.
+
+## [T3 yield/DPPM + CUSUM wiring] — 2026-10-07
+
+### Added
+
+- `src/fabtwin/yields.py`: the three-level yield and DPPM from
+  `docs/data-dictionary.md` section 8. `measurement_pass` / `wafer_pass` /
+  `lot_pass` are separate outputs driven by `YieldConfig` (per-metric spec
+  limits, required metrics, required sites, lot threshold). A wafer missing
+  any required measurement raises instead of silently passing. `compute_dppm`
+  takes `DPPMConfig` with no default denominator (`opportunities_per_wafer`
+  and `defect_definition` are required) and uses `defect_count`, never
+  spec-limit failures. `wilson_interval` supplies the confidence interval
+  Overview 4.4 case 2 asks for on wafer yield.
+- `analysis.run_cusum`: CUSUM now returns the same `SPCRunResult` as I-MR and
+  EWMA, so `score_detection` scores all three methods through one interface
+  (needed for case 1). k and h are given in Phase I sigma multiples and frozen
+  as absolute values in `limits.params`.
+- 18 new tests (14 yield/DPPM with hand-computed expectations plus a real
+  `simulate()` fault scenario, 4 CUSUM). 147/147 pass, ruff/mypy clean.
+
+### Not yet done
+
+- PCA/Hotelling T²/SPE multivariate monitoring (Overview 4.2) is still not
+  built; it is the Overview risk-table checkpoint for the end of T3.
+- Nothing here has been run through a frozen case study; that is Gate T4.

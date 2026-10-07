@@ -24,6 +24,8 @@ import pandas as pd
 
 from fabtwin.config import Metric
 from fabtwin.spc.capability import CapabilityResult, cp_cpk, sigma_within
+from fabtwin.spc.cusum import apply_phase_ii as cusum_apply_phase_ii
+from fabtwin.spc.cusum import fit_phase_i as cusum_fit_phase_i
 from fabtwin.spc.ewma import apply_phase_ii as ewma_apply_phase_ii
 from fabtwin.spc.ewma import fit_phase_i as ewma_fit_phase_i
 from fabtwin.spc.imr import apply_phase_ii as imr_apply_phase_ii
@@ -138,6 +140,37 @@ def run_ewma(
     limits = ewma_fit_phase_i(target=target, sigma=sigma, lam=lam, l_factor=l_factor)
     points = ewma_apply_phase_ii(phase_ii["value"].tolist(), limits)
     return SPCRunResult("EWMA", limits, phase_i, phase_ii, points)
+
+
+def run_cusum(
+    observations: pd.DataFrame,
+    tool_id: str,
+    chamber_id: str,
+    metric: Metric,
+    phase_i_n_lots: int,
+    k_sigma: float = 0.5,
+    h_sigma: float = 5.0,
+) -> SPCRunResult:
+    """k and h are given in multiples of the Phase I moving-range sigma
+    (the usual CUSUM convention) and frozen as absolute values in the
+    result's limits.params. Each ChartPoint.value is the dominant one-sided
+    statistic: +S_hi when it is the larger, otherwise -S_lo.
+    """
+    series = extract_lot_series(observations, tool_id, chamber_id, metric)
+    phase_i, phase_ii = split_phase_i_ii(series, phase_i_n_lots)
+    phase_i_values = phase_i["value"].tolist()
+    target = sum(phase_i_values) / len(phase_i_values)
+    sigma = sigma_within(phase_i_values)
+    limits = cusum_fit_phase_i(target=target, k=k_sigma * sigma, h=h_sigma * sigma)
+    points = [
+        ChartPoint(
+            index=p.index,
+            value=p.s_hi if p.s_hi >= p.s_lo else -p.s_lo,
+            out_of_control=p.out_of_control,
+        )
+        for p in cusum_apply_phase_ii(phase_ii["value"].tolist(), limits)
+    ]
+    return SPCRunResult("CUSUM", limits, phase_i, phase_ii, points)
 
 
 def run_capability(
