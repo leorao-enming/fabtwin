@@ -4,10 +4,14 @@
 Gate T2 (SPC/capability). Changing any field name, unit, or hierarchy level after
 T1 implementation starts requires an ADR, not a silent edit.
 
-This is a specification document — no code in this repo implements it yet. It
-exists so the simulator (T1), SPC/capability layer (T2), fault/yield scoring
-(T3), and the three case studies (4.4) are all built against the same contract
-instead of drifting apart.
+This is the specification the simulator (T1), SPC/capability layer (T2),
+fault/yield scoring (T3) and the three case studies (4.4) are built against, so
+they do not drift apart. It is implemented in `src/fabtwin/`; amendments since the
+lock are listed below.
+
+**Amendments:** [ADR 0002](adr/0002-t3-review-fixes.md) (2026-11-21) — §6 fault
+metric scope, §7 detection window and `post_fault_alarms`, §8 DPPM defect
+definition as text.
 
 ---
 
@@ -115,6 +119,12 @@ Every fault event has: `event_id, fault_type, onset (timestamp), duration_s
 {tool_id, chamber_id (nullable = whole tool), metric}, magnitude,
 recovery_action (nullable) {timestamp, action_type, description}`.
 
+`affected_scope.metric` is one of `etch_depth`, `cd_bias`, `defect_count` (ADR 0002).
+`etch_rate` and `wiwnu` are derived from `etch_depth` (§3), so a fault reaches them
+through `etch_depth`; a fault declared on them directly is rejected. In v1,
+`monotonic_equipment_degradation` counts **lots** processed on the affected
+`(tool_id, chamber_id)`, the first affected lot having zero offset.
+
 ## 7. Detection scoring fields
 
 Computed per `(event_id, method)` pair once T2/T3 land — a method is e.g.
@@ -125,6 +135,20 @@ Computed per `(event_id, method)` pair once T2/T3 land — a method is e.g.
 - `detection_delay` (nullable — time or sample count from `onset` to `first_alarm_timestamp`)
 - `pre_fault_false_alarms` (int ≥ 0 — alarms raised in the Phase II window before `onset`)
 - `missed_event` (bool — true iff `event_detected` is false)
+- `post_fault_alarms` (int ≥ 0 — alarms after the fault stopped being active; ADR 0002)
+
+Detection window (ADR 0002): an alarm counts as a detection only while the fault is
+active (after `onset`, before `duration_s` ends and before any `recovery_action`).
+A score is refused, not computed, when the fault is active anywhere in Phase I, when
+it is never active in Phase II, or when its scope does not match the chart's
+(an `etch_depth` fault may be scored on `etch_rate`/`wiwnu` charts; another
+chamber's chart only as an explicitly declared sibling control).
+
+Which method when (Overview §4.2): one metric over time — I-MR, EWMA, CUSUM
+(EWMA/CUSUM for small sustained shifts, I-MR for large ones). Several correlated
+metrics observed together — PCA with `PCA-T2` (shift inside the normal correlation
+structure) and `PCA-SPE` (a break of that structure that every single metric can
+still hide). A report says which one it uses and does not mix their scores.
 
 ## 8. Yield and DPPM definitions (three-level, per Overview §4.3)
 
@@ -143,6 +167,10 @@ are deliberately kept separate (Overview §4.3: "Yield 明确定义三级口径.
 opportunity count (e.g. sites × inspected-metric-count per wafer) and the
 defect definition threshold must be recorded in `configs/` — DPPM is never
 computed from an implicit/hardcoded denominator.
+
+Amended by ADR 0002: the defect definition is recorded as **text**
+(`defect_definition`), not as a numeric threshold — the simulator generates
+`defect_count` directly, so there is no defect size or signal to threshold.
 
 ## 9. Open items (not yet decided — `planned`, resolved at T1 config-authoring time)
 

@@ -133,8 +133,17 @@ def test_run_imr_end_to_end_flags_drifting_chamber_not_sibling():
     drifting = run_imr(obs, "TOOL-01", "CH-A", "etch_depth", phase_i_n_lots=10)
     healthy = run_imr(obs, "TOOL-01", "CH-B", "etch_depth", phase_i_n_lots=10)
 
+    # A 3-sigma chart whose limits come from only 10 Phase I lots has a real false-alarm
+    # rate: over 200 seeds a healthy chamber shows at least one alarm in 20 Phase II lots
+    # 27 % of the time (I-MR) / 21 % (EWMA). "The sibling never alarms" held only for one
+    # seed and broke when the simulator's random streams changed (ADR 0002), so compare
+    # alarm counts instead.
+    def n_alarms(r):
+        return sum(p.out_of_control for p in r.points)
+
     assert drifting.any_out_of_control is True
-    assert healthy.any_out_of_control is False
+    assert n_alarms(drifting) >= 10
+    assert n_alarms(healthy) <= 2
     assert drifting.first_alarm_index is not None
 
 
@@ -145,8 +154,14 @@ def test_run_ewma_end_to_end_flags_drifting_chamber_not_sibling():
     drifting = run_ewma(obs, "TOOL-01", "CH-A", "etch_depth", phase_i_n_lots=10)
     healthy = run_ewma(obs, "TOOL-01", "CH-B", "etch_depth", phase_i_n_lots=10)
 
+    # A 3-sigma chart whose limits come from only 10 Phase I lots has a real false-alarm
+    # rate: over 200 seeds a healthy chamber shows at least one alarm in 20 Phase II lots
+    # 27 % of the time (I-MR) / 21 % (EWMA). "The sibling never alarms" held only for one
+    # seed and broke when the simulator's random streams changed (ADR 0002), so compare
+    # alarm counts instead.
     assert drifting.any_out_of_control is True
-    assert healthy.any_out_of_control is False
+    assert sum(p.out_of_control for p in drifting.points) >= 10
+    assert sum(p.out_of_control for p in healthy.points) <= 2
 
 
 def test_run_imr_alarm_fires_before_end_of_run():
@@ -213,5 +228,7 @@ def test_run_capability_shows_lower_cpk_for_higher_variance_chamber():
     assert noisy.sigma > calm.sigma
     assert noisy.cpk_or_ppk < calm.cpk_or_ppk
     # the Overview's own framing: "平均值正常" 不等于 "过程健康" - means alone
-    # would not obviously distinguish these two chambers.
-    assert abs(calm.mean - noisy.mean) < 0.25 * abs(calm.sigma - noisy.sigma)
+    # would not obviously distinguish these two chambers. Since variance_inflation scales
+    # the lot-level sigma (ADR 0002) the Phase I mean itself is noisier, so the comparison
+    # is against the noisy chamber's sigma rather than the sigma difference.
+    assert abs(calm.mean - noisy.mean) < 0.5 * noisy.sigma

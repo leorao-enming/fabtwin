@@ -8,9 +8,9 @@ Five layers, kept explicitly separate per the data dictionary:
 4. time-dependent drift/fault -> handled in faults.py, not here
 5. measurement noise          -> measurement_noise
 
-All randomness in this module goes through a single numpy Generator passed
-in by the caller (simulator.py), never a module-level RNG, so a run is
-reproducible end to end from one seed.
+All randomness in this module goes through a numpy Generator passed in by
+the caller (simulator.py keeps one independent stream per chamber), never a
+module-level RNG, so a run is reproducible end to end from one seed.
 
 The fixed-effect formulas below are deliberately synthetic calibration
 constants, not derived from real plasma-etch physics - this is a synthetic
@@ -68,13 +68,18 @@ def draw_tool_chamber_offsets(
     return offsets
 
 
+# The three draws below always consume exactly one normal variate, even when sigma is 0, so
+# the random stream - and therefore every other value in the run - does not depend on which
+# sigmas a config or a fault happens to set to zero (ADR 0002, issue 5).
+
+
 def draw_lot_effect(rng: np.random.Generator, sigma_nm: float) -> float:
-    return float(rng.normal(0.0, sigma_nm)) if sigma_nm > 0 else 0.0
+    return float(sigma_nm * rng.standard_normal())
 
 
 def draw_wafer_effect(rng: np.random.Generator, sigma_nm: float) -> float:
-    return float(rng.normal(0.0, sigma_nm)) if sigma_nm > 0 else 0.0
+    return float(sigma_nm * rng.standard_normal())
 
 
 def measurement_noise(rng: np.random.Generator, sigma_nm: float) -> float:
-    return float(rng.normal(0.0, sigma_nm)) if sigma_nm > 0 else 0.0
+    return float(sigma_nm * rng.standard_normal())

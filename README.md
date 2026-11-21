@@ -49,7 +49,7 @@ make report    # build the technical report from evidence + cases only
 | P0 | Repo skeleton, ADR template, CI empty-run | ✅ `73323d1` |
 | T1 | Simulator + data dictionary + variance-decomposition validation | ✅ `a710bcf` |
 | T2 | SPC + capability (I-MR, EWMA, Xbar-R, Xbar-S, CUSUM, Cp/Cpk/Pp/Ppk, Western Electric/Nelson rules) | ✅ `bd7efb6` |
-| T3 | Fault detection scoring (event_detected/detection_delay/false alarms) | 🟡 all listed deliverables implemented and tested (5 faults, detection scoring for I-MR/EWMA/CUSUM/PCA-T²-SPE, 3-level yield, DPPM); not yet run through any case study; milestone left open pending review |
+| T3 | Fault detection scoring (event_detected/detection_delay/false alarms) | 🟡 all listed deliverables implemented and tested (5 faults, detection scoring for I-MR/EWMA/CUSUM/PCA-T²/SPE, 3-level yield, DPPM); six issues from the 2026-11-05 review fixed (ADR 0002, `CHANGELOG.md`); not yet run through any case study; milestone open pending review |
 | T4 | Demo + 3 cases + external validation (SECOM/LAM9600) | ⬜ not started |
 | T5 | v1.0.0 release | ⬜ not started |
 

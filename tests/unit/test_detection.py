@@ -28,7 +28,14 @@ def _result(timestamps: list[datetime], flags: list[bool]) -> SPCRunResult:
     points = [ChartPoint(index=i, value=0.0, out_of_control=flag) for i, flag in enumerate(flags)]
     limits = FrozenLimits(center_line=0.0, ucl=1.0, lcl=-1.0, method="TEST", params={})
     return SPCRunResult(
-        method="TEST", limits=limits, phase_i=pd.DataFrame(), phase_ii=phase_ii, points=points
+        method="TEST",
+        limits=limits,
+        phase_i=pd.DataFrame(),
+        phase_ii=phase_ii,
+        points=points,
+        tool_id="TOOL-01",
+        chamber_id="CH-A",
+        metrics=("etch_depth",),
     )
 
 

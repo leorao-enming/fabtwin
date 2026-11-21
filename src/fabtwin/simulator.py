@@ -10,10 +10,18 @@ code (T2+) is allowed to read; .hidden_truth exists for validation/tests.
 Within one lot, all wafers/sites share a single processing timestamp (the
 lot's timestamp) - a v1 simplification; nothing in the data dictionary
 requires finer-grained intra-lot timing yet.
+
+Randomness: each (tool_id, chamber_id) draws from its own stream, seeded from
+SeedSequence([seed, crc32(tool_id), crc32(chamber_id)]) (crc32, not Python's
+hash(), which changes between interpreter runs), and every draw consumes a
+fixed number of variates. Together these keep a fault's effect inside its
+declared scope: with the same seed, a fault changes only the rows of the
+chamber, metric and period it targets (data dictionary section 4.6 / ADR 0002).
 """
 
 from __future__ import annotations
 
+import zlib
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -31,7 +39,8 @@ from fabtwin.effects import (
     measurement_noise,
 )
 from fabtwin.faults import (
-    noise_sigma_multiplier,
+    matches_scope,
+    process_sigma_multiplier,
     sensor_bias_offset,
     total_process_contribution,
 )
@@ -58,6 +67,12 @@ OBSERVATION_COLUMNS: tuple[str, ...] = (
 )
 
 
+def chamber_rng(seed: int, tool_id: str, chamber_id: str) -> np.random.Generator:
+    """The independent random stream for one chamber."""
+    entropy = [seed, zlib.crc32(tool_id.encode()), zlib.crc32(chamber_id.encode())]
+    return np.random.default_rng(np.random.SeedSequence(entropy))
+
+
 @dataclass
 class SimulationResult:
     observations: pd.DataFrame
@@ -72,33 +87,43 @@ def simulate(config: SimulationConfig) -> SimulationResult:
         )
     site_ids = SITE_IDS[: config.hierarchy.sites_per_wafer]
 
-    rng = np.random.default_rng(config.seed)
-    tc_offsets = draw_tool_chamber_offsets(config.tool_chambers, rng)
+    tc_offsets: dict[tuple[str, str], tuple[float, float]] = {}
     fixed_depth = fixed_effect_etch_depth_nm(config.recipe)
     fixed_cd_bias = fixed_effect_cd_bias_nm(config.recipe)
 
     rows: list[dict[str, Any]] = []
 
+    degradations = [f for f in config.faults if f.fault_type == "monotonic_equipment_degradation"]
+
     for tc in config.tool_chambers:
+        rng = chamber_rng(config.seed, tc.tool_id, tc.chamber_id)
+        tc_offsets.update(draw_tool_chamber_offsets([tc], rng))
         depth_offset, cd_offset = tc_offsets[(tc.tool_id, tc.chamber_id)]
         t = config.start_time
+        # lots this chamber has processed while each degradation fault was active
+        lots_processed = {f.event_id: 0 for f in degradations}
 
         for lot_index in range(config.hierarchy.n_lots):
             lot_id = f"LOT-{tc.tool_id}-{tc.chamber_id}-{lot_index:04d}"
-            lot_depth_effect = draw_lot_effect(rng, config.random_effects.lot_sigma_nm)
-            lot_cd_effect = draw_lot_effect(rng, config.random_effects.cd_bias_lot_sigma_nm)
 
             depth_process_shift = total_process_contribution(
-                config.faults, tc.tool_id, tc.chamber_id, "etch_depth", t
+                config.faults, tc.tool_id, tc.chamber_id, "etch_depth", t, lots_processed
             )
             cd_process_shift = total_process_contribution(
-                config.faults, tc.tool_id, tc.chamber_id, "cd_bias", t
+                config.faults, tc.tool_id, tc.chamber_id, "cd_bias", t, lots_processed
             )
-            depth_sigma_mult = noise_sigma_multiplier(
+            # variance_inflation scales the process-level (lot and wafer) sigma
+            depth_sigma_mult = process_sigma_multiplier(
                 config.faults, tc.tool_id, tc.chamber_id, "etch_depth", t
             )
-            cd_sigma_mult = noise_sigma_multiplier(
+            cd_sigma_mult = process_sigma_multiplier(
                 config.faults, tc.tool_id, tc.chamber_id, "cd_bias", t
+            )
+            lot_depth_effect = draw_lot_effect(
+                rng, config.random_effects.lot_sigma_nm * depth_sigma_mult
+            )
+            lot_cd_effect = draw_lot_effect(
+                rng, config.random_effects.cd_bias_lot_sigma_nm * cd_sigma_mult
             )
             depth_sensor_bias = sensor_bias_offset(
                 config.faults, tc.tool_id, tc.chamber_id, "etch_depth", t
@@ -109,9 +134,11 @@ def simulate(config: SimulationConfig) -> SimulationResult:
 
             for wafer_index in range(config.hierarchy.lot_size_wafers):
                 wafer_id = f"{lot_id}-W{wafer_index:03d}"
-                wafer_depth_effect = draw_wafer_effect(rng, config.random_effects.wafer_sigma_nm)
+                wafer_depth_effect = draw_wafer_effect(
+                    rng, config.random_effects.wafer_sigma_nm * depth_sigma_mult
+                )
                 wafer_cd_effect = draw_wafer_effect(
-                    rng, config.random_effects.cd_bias_wafer_sigma_nm
+                    rng, config.random_effects.cd_bias_wafer_sigma_nm * cd_sigma_mult
                 )
 
                 site_depths: list[float] = []
@@ -125,9 +152,7 @@ def simulate(config: SimulationConfig) -> SimulationResult:
                 }
 
                 for site_id in site_ids:
-                    depth_noise = measurement_noise(
-                        rng, config.random_effects.site_noise_sigma_nm * depth_sigma_mult
-                    )
+                    depth_noise = measurement_noise(rng, config.random_effects.site_noise_sigma_nm)
                     etch_depth = (
                         fixed_depth
                         + depth_offset
@@ -139,9 +164,7 @@ def simulate(config: SimulationConfig) -> SimulationResult:
                     )
                     site_depths.append(etch_depth)
 
-                    cd_noise = measurement_noise(
-                        rng, config.random_effects.cd_bias_noise_sigma_nm * cd_sigma_mult
-                    )
+                    cd_noise = measurement_noise(rng, config.random_effects.cd_bias_noise_sigma_nm)
                     cd_bias = (
                         fixed_cd_bias
                         + cd_offset
@@ -187,9 +210,9 @@ def simulate(config: SimulationConfig) -> SimulationResult:
                     rng,
                     base_rate=config.random_effects.defect_count_base_rate,
                     fault_delta=total_process_contribution(
-                        config.faults, tc.tool_id, tc.chamber_id, "defect_count", t
+                        config.faults, tc.tool_id, tc.chamber_id, "defect_count", t, lots_processed
                     ),
-                    variance_multiplier=noise_sigma_multiplier(
+                    variance_multiplier=process_sigma_multiplier(
                         config.faults, tc.tool_id, tc.chamber_id, "defect_count", t
                     ),
                     sensor_bias=sensor_bias_offset(
@@ -215,6 +238,9 @@ def simulate(config: SimulationConfig) -> SimulationResult:
                     }
                 )
 
+            for f in degradations:
+                if matches_scope(f, tc.tool_id, tc.chamber_id, f.metric) and f.active_at(t):
+                    lots_processed[f.event_id] += 1
             t = t + timedelta(minutes=config.hierarchy.lot_interval_minutes)
 
     observations = pd.DataFrame(rows, columns=list(OBSERVATION_COLUMNS))

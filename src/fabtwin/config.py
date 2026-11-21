@@ -7,12 +7,27 @@ this module runs a simulation - see simulator.py.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 Metric = Literal["etch_depth", "etch_rate", "cd_bias", "wiwnu", "defect_count"]
+
+# Metrics a fault can target. etch_rate and wiwnu are computed from etch_depth
+# (data dictionary section 3), so a fault acts on them through etch_depth; a fault declared
+# on them directly used to be accepted and silently did nothing (ADR 0002).
+FaultMetric = Literal["etch_depth", "cd_bias", "defect_count"]
+FAULT_METRICS: tuple[FaultMetric, ...] = ("etch_depth", "cd_bias", "defect_count")
+DERIVED_FROM: dict[Metric, Metric] = {"etch_rate": "etch_depth", "wiwnu": "etch_depth"}
 
 SITE_LEVEL_METRICS: tuple[Metric, ...] = ("etch_depth", "etch_rate", "cd_bias")
 WAFER_LEVEL_METRICS: tuple[Metric, ...] = ("wiwnu", "defect_count")
@@ -60,13 +75,30 @@ class ToolChamberConfig(BaseModel):
 
 
 class RecoveryAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     timestamp: datetime
     action_type: str
     description: str | None = None
 
+    @model_serializer(mode="wrap")
+    def _omit_missing_description(self, handler: SerializerFunctionWrapHandler) -> dict:
+        # the schema allows description to be absent but not null
+        data = handler(self)
+        if data.get("description") is None:
+            data.pop("description", None)
+        return data
+
 
 class FaultEvent(BaseModel):
-    """Mirrors docs/schemas/fault-event.schema.json exactly."""
+    """One fault in the hidden ground-truth schedule.
+
+    Accepts both the schema form (docs/schemas/fault-event.schema.json, with a nested
+    `affected_scope`) and the flat keyword form used in Python code; always serializes to the
+    schema form, so `model_dump(mode="json")` validates against the schema and round-trips.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     event_id: str
     fault_type: FaultType
@@ -74,9 +106,53 @@ class FaultEvent(BaseModel):
     duration_s: float | None = None
     tool_id: str
     chamber_id: str | None = None
-    metric: Metric
+    metric: FaultMetric
     magnitude: float
     recovery_action: RecoveryAction | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_schema_form(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "affected_scope" in data:
+            data = dict(data)
+            scope = data.pop("affected_scope")
+            if not isinstance(scope, dict):
+                raise ValueError("affected_scope must be an object")
+            clash = {"tool_id", "chamber_id", "metric"} & data.keys()
+            if clash:
+                raise ValueError(f"give {sorted(clash)} either flat or in affected_scope, not both")
+            data.update(scope)
+        return data
+
+    @model_serializer(mode="wrap")
+    def _to_schema_form(self, handler: SerializerFunctionWrapHandler) -> dict:
+        data = handler(self)
+        scope = {k: data.pop(k) for k in ("tool_id", "chamber_id", "metric") if k in data}
+        out = {}
+        for key in ("event_id", "fault_type", "onset", "duration_s"):
+            if key in data:
+                out[key] = data.pop(key)
+        out["affected_scope"] = scope
+        out.update(data)
+        return out
+
+    @model_validator(mode="after")
+    def _check_values(self) -> FaultEvent:
+        if not math.isfinite(self.magnitude):
+            raise ValueError(f"fault {self.event_id}: magnitude must be finite")
+        if self.duration_s is not None and self.duration_s <= 0:
+            raise ValueError(f"fault {self.event_id}: duration_s must be positive (or null)")
+        if self.recovery_action is not None and self.recovery_action.timestamp <= self.onset:
+            raise ValueError(f"fault {self.event_id}: recovery_action must come after onset")
+        if self.fault_type == "variance_inflation":
+            if self.magnitude <= 0:
+                raise ValueError(f"fault {self.event_id}: variance factor must be positive")
+            if self.metric == "defect_count" and self.magnitude < 1:
+                # the count model can widen a Poisson (negative binomial) but not narrow it
+                raise ValueError(
+                    f"fault {self.event_id}: variance factor on defect_count must be >= 1"
+                )
+        return self
 
     def active_at(self, t: datetime) -> bool:
         if t < self.onset:
