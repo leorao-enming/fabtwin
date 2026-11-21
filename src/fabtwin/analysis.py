@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from fabtwin.config import Metric
+from fabtwin.spc.calibration import Calibration, pca_multiplier, univariate_multiplier
 from fabtwin.spc.capability import CapabilityResult, cp_cpk, sigma_within
 from fabtwin.spc.cusum import apply_phase_ii as cusum_apply_phase_ii
 from fabtwin.spc.cusum import fit_phase_i as cusum_fit_phase_i
@@ -123,10 +124,16 @@ def run_imr(
     chamber_id: str,
     metric: Metric,
     phase_i_n_lots: int,
+    false_alarm_target: float | None = None,
 ) -> SPCRunResult:
+    """`false_alarm_target`: if given, the 3-sigma multiplier is replaced by one calibrated
+    so that P(at least one false alarm over this Phase II window) = target, accounting for
+    the Phase I length (spc/calibration.py). None keeps the classical 3-sigma limits."""
     series = extract_lot_series(observations, tool_id, chamber_id, metric)
     phase_i, phase_ii = split_phase_i_ii(series, phase_i_n_lots)
-    limits = imr_fit_phase_i(phase_i["value"].tolist())
+    cal = _calibrate("I-MR", len(phase_i), len(phase_ii), false_alarm_target)
+    limits = imr_fit_phase_i(phase_i["value"].tolist(), k=cal.multiplier if cal else 3.0)
+    limits = _with_calibration(limits, cal)
     points = imr_apply_phase_ii(phase_ii["value"].tolist(), limits)
     return SPCRunResult("I-MR", limits, phase_i, phase_ii, points, tool_id, chamber_id, (metric,))
 
@@ -139,13 +146,19 @@ def run_ewma(
     phase_i_n_lots: int,
     lam: float = 0.3,
     l_factor: float = 3.0,
+    false_alarm_target: float | None = None,
 ) -> SPCRunResult:
+    """`false_alarm_target` replaces `l_factor` with a calibrated L (see run_imr)."""
     series = extract_lot_series(observations, tool_id, chamber_id, metric)
     phase_i, phase_ii = split_phase_i_ii(series, phase_i_n_lots)
     phase_i_values = phase_i["value"].tolist()
     target = sum(phase_i_values) / len(phase_i_values)
     sigma = sigma_within(phase_i_values)  # moving-range sigma estimator, shared with capability.py
+    cal = _calibrate("EWMA", len(phase_i), len(phase_ii), false_alarm_target, lam=lam)
+    if cal:
+        l_factor = cal.multiplier
     limits = ewma_fit_phase_i(target=target, sigma=sigma, lam=lam, l_factor=l_factor)
+    limits = _with_calibration(limits, cal)
     points = ewma_apply_phase_ii(phase_ii["value"].tolist(), limits)
     return SPCRunResult("EWMA", limits, phase_i, phase_ii, points, tool_id, chamber_id, (metric,))
 
@@ -158,6 +171,7 @@ def run_cusum(
     phase_i_n_lots: int,
     k_sigma: float = 0.5,
     h_sigma: float = 5.0,
+    false_alarm_target: float | None = None,
 ) -> SPCRunResult:
     """k and h are given in multiples of the Phase I moving-range sigma
     (the usual CUSUM convention) and frozen as absolute values in the
@@ -169,7 +183,12 @@ def run_cusum(
     phase_i_values = phase_i["value"].tolist()
     target = sum(phase_i_values) / len(phase_i_values)
     sigma = sigma_within(phase_i_values)
-    limits = cusum_fit_phase_i(target=target, k=k_sigma * sigma, h=h_sigma * sigma)
+    cal = _calibrate("CUSUM", len(phase_i), len(phase_ii), false_alarm_target, k_sigma=k_sigma)
+    if cal:
+        h_sigma = cal.multiplier
+    limits = _with_calibration(
+        cusum_fit_phase_i(target=target, k=k_sigma * sigma, h=h_sigma * sigma), cal
+    )
     points = [
         ChartPoint(
             index=p.index,
@@ -191,6 +210,7 @@ def run_pca_monitor(
     variance_threshold: float = 0.9,
     n_components: int | None = None,
     statistic: Literal["T2", "SPE", "either"] = "either",
+    false_alarm_target: float | None = None,
 ) -> SPCRunResult:
     """Multivariate PCA / Hotelling T^2 / SPE over per-lot means of `metrics`.
 
@@ -206,6 +226,8 @@ def run_pca_monitor(
         raise ValueError("PCA monitoring needs at least 2 metrics")
     if statistic not in ("T2", "SPE", "either"):
         raise ValueError(f"statistic must be 'T2', 'SPE' or 'either', got {statistic!r}")
+    # false_alarm_target: the limit ratios are divided by a common factor c from a
+    # parametric bootstrap (spc/calibration.pca_multiplier), so the frozen limit stays 1.0.
     series = [extract_lot_series(observations, tool_id, chamber_id, m) for m in metrics]
     base = series[0]
     for other in series[1:]:
@@ -220,13 +242,26 @@ def run_pca_monitor(
         n_components=n_components,
     )
     scores = pca_apply_phase_ii(matrix[phase_i_n_lots:], model)
-    t2_ratio, spe_ratio = scores.t2 / model.t2_limit, scores.spe / model.spe_limit
+    cal = None
+    if false_alarm_target is not None:
+        cal = pca_multiplier(
+            matrix[:phase_i_n_lots],
+            len(matrix) - phase_i_n_lots,
+            false_alarm_target,
+            statistic=statistic,
+            alpha=alpha,
+            variance_threshold=variance_threshold,
+            n_components=n_components,
+        )
+    c = cal.multiplier if cal else 1.0
+    t2_ratio, spe_ratio = scores.t2 / model.t2_limit / c, scores.spe / model.spe_limit / c
     if statistic == "T2":
-        method, ratio, alarm = "PCA-T2", t2_ratio, scores.t2_alarm
+        method, ratio = "PCA-T2", t2_ratio
     elif statistic == "SPE":
-        method, ratio, alarm = "PCA-SPE", spe_ratio, scores.spe_alarm
+        method, ratio = "PCA-SPE", spe_ratio
     else:
-        method, ratio, alarm = "PCA-T2-SPE", np.maximum(t2_ratio, spe_ratio), scores.alarm
+        method, ratio = "PCA-T2-SPE", np.maximum(t2_ratio, spe_ratio)
+    alarm = ratio > 1.0
     points = [
         ChartPoint(index=i, value=float(r), out_of_control=bool(a))
         for i, (r, a) in enumerate(zip(ratio, alarm, strict=True))
@@ -236,10 +271,39 @@ def run_pca_monitor(
         ucl=1.0,
         lcl=0.0,
         method=method,
-        params={**model.params, "metrics": list(metrics), "statistic": statistic},
+        params={
+            **model.params,
+            "metrics": list(metrics),
+            "statistic": statistic,
+            **({"calibration": cal.as_params()} if cal else {}),
+        },
     )
     return SPCRunResult(
         method, limits, phase_i, phase_ii, points, tool_id, chamber_id, tuple(metrics)
+    )
+
+
+def _calibrate(
+    method: Literal["I-MR", "EWMA", "CUSUM"],
+    n_phase_i: int,
+    horizon: int,
+    target: float | None,
+    **kw: float,
+) -> Calibration | None:
+    if target is None:
+        return None
+    return univariate_multiplier(method, n_phase_i, horizon, target, **kw)  # type: ignore[arg-type]
+
+
+def _with_calibration(limits: FrozenLimits, cal: Calibration | None) -> FrozenLimits:
+    if cal is None:
+        return limits
+    return FrozenLimits(
+        center_line=limits.center_line,
+        ucl=limits.ucl,
+        lcl=limits.lcl,
+        method=limits.method,
+        params={**limits.params, "calibration": cal.as_params()},
     )
 
 
