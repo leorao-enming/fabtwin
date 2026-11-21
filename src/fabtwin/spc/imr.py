@@ -17,11 +17,12 @@ def moving_ranges(x: list[float]) -> list[float]:
     return [abs(x[i] - x[i - 1]) for i in range(1, len(x))]
 
 
-def fit_phase_i(x: list[float]) -> FrozenLimits:
-    """Estimate I-MR center line and 3-sigma control limits from Phase I data.
+def fit_phase_i(x: list[float], k: float = 3.0) -> FrozenLimits:
+    """Estimate I-MR center line and k-sigma control limits from Phase I data.
 
-    sigma_hat = MRbar / d2, limits = xbar +/- 3*sigma_hat, per the NIST
-    reference above.
+    sigma_hat = MRbar / d2, limits = xbar +/- k*sigma_hat, per the NIST
+    reference above (k = 3). A different k comes from spc/calibration.py when the
+    limits must account for a short Phase I.
     """
     if len(x) < 2:
         raise ValueError("Phase I I-MR fit needs at least 2 observations (>=1 moving range)")
@@ -31,10 +32,10 @@ def fit_phase_i(x: list[float]) -> FrozenLimits:
     sigma_hat = mr_bar / D2_N2
     return FrozenLimits(
         center_line=xbar,
-        ucl=xbar + 3 * sigma_hat,
-        lcl=xbar - 3 * sigma_hat,
+        ucl=xbar + k * sigma_hat,
+        lcl=xbar - k * sigma_hat,
         method="I-MR",
-        params={"mr_bar": mr_bar, "d2": D2_N2, "sigma_hat": sigma_hat, "k": 3.0},
+        params={"mr_bar": mr_bar, "d2": D2_N2, "sigma_hat": sigma_hat, "k": k},
     )
 
 

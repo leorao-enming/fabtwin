@@ -356,3 +356,34 @@ re-seeded:
   case 2 config, S chart not wired into `analysis.py`, `validate.py` not covering PCA and
   detection scoring) are unchanged; the Cpk-vs-variance numbers need re-measuring now
   that variance inflation acts at the process level.
+
+## [Calibrated limits for a short Phase I] - 2026-11-21
+
+### Added
+
+- `src/fabtwin/spc/calibration.py` and `false_alarm_target=` on `run_imr`, `run_ewma`,
+  `run_cusum`, `run_pca_monitor` (opt-in; classical limits stay the default). The limit
+  multiplier is chosen so that P(at least one false alarm over the Phase II window) equals
+  the target, accounting for the Phase I length: a seeded Monte Carlo for the univariate
+  charts (exact under i.i.d. normality, because the estimates are location-scale
+  equivariant), a parametric bootstrap for PCA (approximation). Recorded in
+  `limits.params["calibration"]`. Decision and trade-offs: `docs/adr/0003`.
+- `imr.fit_phase_i(x, k=3.0)`: the multiplier is a parameter (default unchanged).
+- `scripts/t4_false_alarm_calibration.py`: measurement on the simulator.
+- 12 tests, the key one independent of how the multiplier is computed: fresh data with an
+  arbitrary mean and sigma, a different seed and the real chart code give a family-wise
+  false-alarm rate within 0.015 of 5 % for I-MR, EWMA and CUSUM.
+
+### Measured (200 seeds; PCA 40; target 5 %)
+
+- Healthy-chamber any-alarm rate, 10-lot Phase I / 20-lot Phase II: I-MR 0.30 -> 0.06,
+  EWMA 0.30 -> 0.07, CUSUM 0.32 -> 0.07; PCA (15/25 lots) 0.75 -> 0.07.
+- 5 nm/h drift still detected in every run (median delay 1 h; CUSUM 2 h).
+- Cost on a small 1 nm step: detection I-MR 0.77 -> 0.34, EWMA 0.95 -> 0.77,
+  CUSUM 0.99 -> 0.94, with longer delays (ADR 0003 table).
+
+### Not done
+
+- Not yet used by any case study; normality is assumed (approximation for wiwnu and
+  defect_count). SPE's own small-Phase-I bias (review: 9.2 % at 15 lots vs 1 % nominal) is
+  absorbed by the PCA bootstrap only in the family-wise sense.
