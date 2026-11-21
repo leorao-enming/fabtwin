@@ -19,6 +19,7 @@ Phase I never include data a case is trying to detect a fault in.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -92,6 +93,10 @@ class SPCRunResult:
     phase_i: pd.DataFrame
     phase_ii: pd.DataFrame
     points: list[ChartPoint]
+    # what the chart was computed on; detection.score_detection checks a fault against it
+    tool_id: str
+    chamber_id: str
+    metrics: tuple[Metric, ...]
 
     @property
     def any_out_of_control(self) -> bool:
@@ -123,7 +128,7 @@ def run_imr(
     phase_i, phase_ii = split_phase_i_ii(series, phase_i_n_lots)
     limits = imr_fit_phase_i(phase_i["value"].tolist())
     points = imr_apply_phase_ii(phase_ii["value"].tolist(), limits)
-    return SPCRunResult("I-MR", limits, phase_i, phase_ii, points)
+    return SPCRunResult("I-MR", limits, phase_i, phase_ii, points, tool_id, chamber_id, (metric,))
 
 
 def run_ewma(
@@ -142,7 +147,7 @@ def run_ewma(
     sigma = sigma_within(phase_i_values)  # moving-range sigma estimator, shared with capability.py
     limits = ewma_fit_phase_i(target=target, sigma=sigma, lam=lam, l_factor=l_factor)
     points = ewma_apply_phase_ii(phase_ii["value"].tolist(), limits)
-    return SPCRunResult("EWMA", limits, phase_i, phase_ii, points)
+    return SPCRunResult("EWMA", limits, phase_i, phase_ii, points, tool_id, chamber_id, (metric,))
 
 
 def run_cusum(
@@ -173,7 +178,7 @@ def run_cusum(
         )
         for p in cusum_apply_phase_ii(phase_ii["value"].tolist(), limits)
     ]
-    return SPCRunResult("CUSUM", limits, phase_i, phase_ii, points)
+    return SPCRunResult("CUSUM", limits, phase_i, phase_ii, points, tool_id, chamber_id, (metric,))
 
 
 def run_pca_monitor(
@@ -185,17 +190,22 @@ def run_pca_monitor(
     alpha: float = 0.01,
     variance_threshold: float = 0.9,
     n_components: int | None = None,
+    statistic: Literal["T2", "SPE", "either"] = "either",
 ) -> SPCRunResult:
     """Multivariate PCA / Hotelling T^2 / SPE over per-lot means of `metrics`.
 
-    Each ChartPoint.value is max(T^2/T^2_limit, SPE/SPE_limit), so the frozen
-    limit is 1.0 and a point alarms when either statistic exceeds its own
-    limit. Do not include perfectly collinear metrics (etch_rate is a
-    deterministic function of etch_depth): a degenerate Phase I covariance
-    leaves no meaningful residual subspace.
+    `statistic` picks what counts as an alarm, and names the method the way data
+    dictionary section 7 does: "T2" -> method "PCA-T2" (ChartPoint.value = T^2/limit),
+    "SPE" -> "PCA-SPE" (SPE/limit), "either" -> "PCA-T2-SPE" (the larger ratio; alarm
+    if either exceeds its own limit). The frozen limit is 1.0 in every case.
+    Do not include perfectly collinear metrics (etch_rate is a deterministic
+    function of etch_depth): a degenerate Phase I covariance leaves no
+    meaningful residual subspace.
     """
     if len(metrics) < 2:
         raise ValueError("PCA monitoring needs at least 2 metrics")
+    if statistic not in ("T2", "SPE", "either"):
+        raise ValueError(f"statistic must be 'T2', 'SPE' or 'either', got {statistic!r}")
     series = [extract_lot_series(observations, tool_id, chamber_id, m) for m in metrics]
     base = series[0]
     for other in series[1:]:
@@ -210,19 +220,27 @@ def run_pca_monitor(
         n_components=n_components,
     )
     scores = pca_apply_phase_ii(matrix[phase_i_n_lots:], model)
-    ratio = np.maximum(scores.t2 / model.t2_limit, scores.spe / model.spe_limit)
+    t2_ratio, spe_ratio = scores.t2 / model.t2_limit, scores.spe / model.spe_limit
+    if statistic == "T2":
+        method, ratio, alarm = "PCA-T2", t2_ratio, scores.t2_alarm
+    elif statistic == "SPE":
+        method, ratio, alarm = "PCA-SPE", spe_ratio, scores.spe_alarm
+    else:
+        method, ratio, alarm = "PCA-T2-SPE", np.maximum(t2_ratio, spe_ratio), scores.alarm
     points = [
         ChartPoint(index=i, value=float(r), out_of_control=bool(a))
-        for i, (r, a) in enumerate(zip(ratio, scores.alarm, strict=True))
+        for i, (r, a) in enumerate(zip(ratio, alarm, strict=True))
     ]
     limits = FrozenLimits(
         center_line=0.0,
         ucl=1.0,
         lcl=0.0,
-        method="PCA-T2-SPE",
-        params={**model.params, "metrics": list(metrics)},
+        method=method,
+        params={**model.params, "metrics": list(metrics), "statistic": statistic},
     )
-    return SPCRunResult("PCA-T2-SPE", limits, phase_i, phase_ii, points)
+    return SPCRunResult(
+        method, limits, phase_i, phase_ii, points, tool_id, chamber_id, tuple(metrics)
+    )
 
 
 def run_capability(

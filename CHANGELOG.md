@@ -286,3 +286,73 @@ deliverable, not T1's, per the Roadmap table.
   PCA on the simulator's lot means is a plumbing check, not evidence about real
   multi-sensor data.
 
+
+## [T3 review fixes] - 2026-11-21
+
+Fixes for the six issues the 2026-11-05 T3 review found at `775ce5e` (all existing checks
+were green; independent probes found the problems). Data-dictionary changes are in
+`docs/adr/0002-t3-review-fixes.md`. Done on macOS (arm64, Python 3.11.16, numpy 2.4.6,
+pandas 3.1.1, scipy 1.17.1, pydantic 2.14.4).
+
+### Fixed
+
+1. **Faults on derived metrics did nothing.** `FaultEvent.metric` and the schema now allow
+   only `etch_depth`, `cd_bias`, `defect_count`; `etch_rate`/`wiwnu` faults are rejected
+   (they are derived from `etch_depth`). Was: 0 rows changed, no error.
+2. **Degradation was per hour.** `monotonic_equipment_degradation` now drifts per lot
+   processed on the affected chamber (counted by the simulator, never defaulted; first
+   affected lot offset 0). Was: identical to `linear_drift`, 0.5 vs 2.0 nm per lot at 30 vs
+   120 min spacing; now 1.000 nm per lot at both.
+3. **Detection scoring credited the wrong alarms.** Only alarms while the fault is active
+   count; later ones go to the new `post_fault_alarms`. Scoring raises if the fault is active
+   in Phase I, never active in Phase II, or out of the chart's scope (`SPCRunResult` now
+   carries `tool_id`, `chamber_id`, `metrics`; another chamber only with
+   `sibling_control=True`). Was: a fault that ended at hour 3 "detected" at hour 20; a fault
+   inside Phase I "detected"; a chamber-B fault silently "missed" on chamber A's chart.
+4. **`FaultEvent` and its schema were incompatible both ways.** The model accepts the
+   schema's nested `affected_scope` (and the flat form), serializes to the schema form, omits
+   a missing `description`, and forbids unknown fields. Round-trip tests added.
+5. **A `defect_count` fault changed unrelated data.** Each chamber now has its own random
+   stream (`SeedSequence([seed, crc32(tool_id), crc32(chamber_id)])`), every draw consumes a
+   fixed number of variates, and `defect_count` uses one uniform plus the inverse CDF. Was:
+   4912 rows changed across both chambers and all five metrics; now 50 rows, chamber A,
+   `defect_count` only. **This changes every seed's output.**
+6. **`variance_inflation` scaled site measurement noise.** It now scales the lot and wafer
+   sigma (process level, §6); site noise is the measurement layer and is untouched. At x5:
+   within-wafer sd 1.90 -> 1.92 (unchanged), lot-mean sd 4.96 -> 22.23.
+
+Also: `run_pca_monitor(statistic="T2"|"SPE"|"either")` names its method `PCA-T2` /
+`PCA-SPE` / `PCA-T2-SPE` (§7); fault configs reject non-positive or non-finite variance
+factors, a `defect_count` variance factor below 1, non-positive durations, recovery at or
+before onset, and non-finite magnitudes; data dictionary §7 says when to use univariate
+charts vs PCA; stale "no code implements it yet" / "Empty at P0" text updated.
+
+### Tests changed after seeing them fail (kept for the record)
+
+The new random streams made five existing tests fail. Each was re-examined rather than
+re-seeded:
+
+- Three asserted "a healthy sibling chamber never alarms" (I-MR, EWMA, detection
+  integration). Over 200 seeds a 3-sigma chart with a 10-lot Phase I shows at least one
+  false alarm in 20 lots 27 % (I-MR) / 21 % (EWMA) of the time; the assertion held only for
+  seed 42 before. They now require the drifting chamber to alarm on >= 10 of 20 lots and the
+  sibling on <= 2, and the sibling-control score to match the sibling's own alarms.
+- The PCA end-to-end test asserted the healthy sibling never alarms; the review already
+  measured healthy PCA alarms in most runs with a 15-lot Phase I (a T4 risk). It now
+  requires the faulted chamber to alarm more than 3x as often.
+- The capability test's "means are close" check compared the mean difference with the sigma
+  difference. With lot-level variance inflation the Phase I mean is noisier; it now
+  compares with the noisy chamber's sigma (0.3 sigma here). The Cpk assertions are unchanged
+  (Cpk 4.64 vs 0.57).
+
+189 tests pass, ruff, ruff format, mypy and `validate.py` pass.
+
+### Not done
+
+- Review plan step 5 (dependency lock file, `.gitattributes`, cross-system baseline
+  fingerprints, CI matrix): which systems the CI matrix covers is not decided yet.
+- T3 milestone stays open until Leo reviews the fixes against Overview §4.3.
+- The T4 risks the review listed (PCA healthy false alarms, SPE needing a long Phase I,
+  case 2 config, S chart not wired into `analysis.py`, `validate.py` not covering PCA and
+  detection scoring) are unchanged; the Cpk-vs-variance numbers need re-measuring now
+  that variance inflation acts at the process level.

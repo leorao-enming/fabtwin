@@ -10,6 +10,7 @@ deltas through, but the distributional fidelity stays intentionally simple).
 from __future__ import annotations
 
 import numpy as np
+from scipy import stats
 
 
 def etch_rate_from_depth(etch_depth_nm: float, etch_time_s: float) -> float:
@@ -43,15 +44,24 @@ def defect_count_for_wafer(
     since a plain Poisson has no free variance parameter to inflate.
     sensor_bias is applied last as an integer offset to the reported count,
     representing a miscalibrated inspection step rather than a real defect.
+
+    Exactly one uniform variate is drawn per call and turned into a count by
+    the inverse CDF. Poisson/negative-binomial samplers consume a varying
+    number of variates depending on the mean, which made a defect_count fault
+    change every later value in the stream (ADR 0002, issue 5).
     """
+    u = rng.random()
     mean = max(0.0, base_rate + fault_delta)
-    if variance_multiplier > 1.0 and mean > 0:
+    if mean == 0.0:
+        count = 0
+    elif variance_multiplier > 1.0:
         # Negative binomial with mean m and variance k*m (k = variance_multiplier):
         # variance = m + m^2/r  =>  r = m / (k - 1)
         r = mean / (variance_multiplier - 1.0)
         p = r / (r + mean)
-        count = rng.negative_binomial(r, p)
+        count = int(stats.nbinom.ppf(u, r, p))
     else:
-        count = rng.poisson(mean)
+        count = int(stats.poisson.ppf(u, mean))
+    count = max(0, count)
     count = int(count + round(sensor_bias))
     return max(0, count)

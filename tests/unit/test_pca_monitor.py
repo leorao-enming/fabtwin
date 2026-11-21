@@ -165,7 +165,11 @@ def test_pca_run_through_simulator_and_detection_scoring():
     assert hit.limits.params["metrics"] == metrics
     score = score_detection(hit, fault)
     assert score.event_detected and score.pre_fault_false_alarms == 0
-    assert not sibling.any_out_of_control
+    # Not "the sibling never alarms": with a 15-lot Phase I, healthy data alarms in most
+    # runs (2026-11-05 review, T4 risk), and that assertion held only for one seed.
+    assert sum(p.out_of_control for p in hit.points) > 3 * sum(
+        p.out_of_control for p in sibling.points
+    )
 
 
 def test_run_pca_monitor_rejects_single_metric():

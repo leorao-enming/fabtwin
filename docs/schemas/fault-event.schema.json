@@ -33,7 +33,8 @@
         },
         "metric": {
           "type": "string",
-          "enum": ["etch_depth", "etch_rate", "cd_bias", "wiwnu", "defect_count"]
+          "enum": ["etch_depth", "cd_bias", "defect_count"],
+          "description": "etch_rate and wiwnu are derived from etch_depth (data dictionary section 3); a fault reaches them through etch_depth. See docs/adr/0002."
         }
       },
       "additionalProperties": false

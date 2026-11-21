@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from fabtwin.config import FaultEvent, RecoveryAction
 from fabtwin.faults import (
-    noise_sigma_multiplier,
+    process_sigma_multiplier,
     process_value_contribution,
     sensor_bias_offset,
     total_process_contribution,
@@ -97,11 +97,12 @@ def test_degradation_stops_after_recovery_action():
             timestamp=T0 + timedelta(hours=10), action_type="maintenance"
         ),
     )
+    # magnitude is per lot processed (ADR 0002); the simulator supplies the count
     before_recovery = process_value_contribution(
-        fault, "TOOL-01", "CH-A", "etch_depth", T0 + timedelta(hours=9)
+        fault, "TOOL-01", "CH-A", "etch_depth", T0 + timedelta(hours=9), {"E1": 9}
     )
     after_recovery = process_value_contribution(
-        fault, "TOOL-01", "CH-A", "etch_depth", T0 + timedelta(hours=11)
+        fault, "TOOL-01", "CH-A", "etch_depth", T0 + timedelta(hours=11), {"E1": 9}
     )
     assert before_recovery == 9.0
     assert after_recovery == 0.0
@@ -128,11 +129,11 @@ def test_variance_inflation_multiplies_and_compounds():
             magnitude=1.5,
         ),
     ]
-    multiplier = noise_sigma_multiplier(
+    multiplier = process_sigma_multiplier(
         faults, "TOOL-01", "CH-A", "etch_depth", T0 + timedelta(hours=1)
     )
     assert multiplier == 3.0
-    baseline = noise_sigma_multiplier(
+    baseline = process_sigma_multiplier(
         faults, "TOOL-01", "CH-B", "etch_depth", T0 + timedelta(hours=1)
     )
     assert baseline == 1.0

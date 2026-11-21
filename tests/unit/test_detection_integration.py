@@ -77,11 +77,15 @@ def test_detection_score_end_to_end_on_drifting_chamber():
 
 
 def test_detection_score_no_false_alarms_on_sibling_chamber_for_same_fault():
-    """CH-B never had the fault applied to it. Scoring CH-B's own I-MR run
-    against the CH-A fault is not a realistic production use (a fault
-    targets a specific chamber) - but it demonstrates score_detection()
-    correctly reports "no alarm ever fired" rather than fabricating a
-    detection, since CH-B's own I-MR run should have zero alarms at all.
+    """CH-B never had the fault applied to it. Scoring CH-B's chart against the
+    CH-A fault is a sibling control (it must be declared, ADR 0002): whatever
+    "detection" it reports is a false-alarm measure, so it must come only from
+    CH-B's own alarms, and there should be few of them.
+
+    It used to assert "no alarm at all"; that held for one seed only. A 10-lot
+    Phase I gives a healthy I-MR chart a 27 % chance of at least one alarm in 20
+    lots (measured over 200 seeds), and seed 42 lands on one after the random
+    streams were made per-chamber.
     """
     start = datetime(2026, 1, 1)
     drift_onset = start + timedelta(hours=10)
@@ -90,11 +94,18 @@ def test_detection_score_no_false_alarms_on_sibling_chamber_for_same_fault():
     fault = config.faults[0]
 
     healthy_result = run_imr(obs, "TOOL-01", "CH-B", "etch_depth", phase_i_n_lots=10)
-    score = score_detection(healthy_result, fault)
+    drifting_result = run_imr(obs, "TOOL-01", "CH-A", "etch_depth", phase_i_n_lots=10)
+    # scoring another chamber's chart is refused unless declared as a sibling control
+    score = score_detection(healthy_result, fault, sibling_control=True)
+    real = score_detection(drifting_result, fault)
 
-    assert score.event_detected is False
-    assert score.missed_event is True
+    alarms = [p.out_of_control for p in healthy_result.points]
+    assert score.event_detected is any(alarms)
+    assert score.missed_event is not any(alarms)
     assert score.pre_fault_false_alarms == 0
+    assert sum(alarms) <= 2
+    assert sum(p.out_of_control for p in drifting_result.points) >= 10
+    assert real.event_detected is True
 
 
 def test_detection_score_counts_pre_fault_false_alarms_when_phase_ii_starts_early():
